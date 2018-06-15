@@ -1,8 +1,7 @@
 # Helico-opter.
 
-Currently, just lab 1 code.
+A continuation of a project from CSC 476 Winter 2018.
 ## Controls
-* Click the screen to bind the mouse. 
-  * Click again to unbind
-* Use WASD to move. 
-* Use R/F to move vertically.
+* Use W/S to move vertically. 
+* Use Right arrow to shoot the bird.
+* Use arrow keys to control the bird during flight.

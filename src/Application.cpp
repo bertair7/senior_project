@@ -65,7 +65,9 @@ void Application::initMainProgram(const std::string& resourceDirectory) {
     mainProgram->addUniform("mSpecularAlpha");
     mainProgram->addUniform("eyePosition");
     mainProgram->addUniform("directionTowardsLight");
-    //mainProgram->addUniform("Texture0");
+    mainProgram->addUniform("Texture0");
+	//mainProgram->addUniform("fogSelector");
+	//mainProgram->addUniform("depthFog");
     mainProgram->addAttribute("vPosition");
     mainProgram->addAttribute("vNormal");
     mainProgram->addAttribute("vTextureCoordinates");
@@ -104,10 +106,12 @@ void Application::initGroundProgram(const std::string& resourceDirectory) {
     groundProgram->addUniform("M");
     groundProgram->addUniform("offset");
     groundProgram->addUniform("w");
+	groundProgram->addUniform("Texture0");
+	groundProgram->addUniform("fogSelector");
+	groundProgram->addUniform("depthFog");
     groundProgram->addAttribute("vertPos");
     groundProgram->addAttribute("vertNor");
     groundProgram->addAttribute("vertTex");
-    groundProgram->addUniform("Texture0");
 }
 
 void Application::initTextures(const std::string& resourceDirectory) {
@@ -116,7 +120,12 @@ void Application::initTextures(const std::string& resourceDirectory) {
     grassTexture->init();
     grassTexture->setUnit(0);
     grassTexture->setWrapModes(GL_REPEAT, GL_REPEAT);
-    //grassTexture->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
+
+	fogTexture = make_shared<Texture>();
+	fogTexture->setFilename(resourceDirectory + "/fog.jpg");
+	fogTexture->init();
+	fogTexture->setUnit(0);
+	fogTexture->setWrapModes(GL_REPEAT, GL_REPEAT);
 }
 
 void Application::initGeom(const std::string& resourceDirectory) {
@@ -319,7 +328,7 @@ void Application::initPlayer(shared_ptr<Model> model, shared_ptr<Model> propMode
     player->body = createBodyFromModel(model, 2000.0f, vec2(0.0f, 0.0f), "helicopter");
 	player->body->SetLinearVelocity(b2Vec2(15.0f, 0.0f));
     player->body->SetFixedRotation(true);
-    player->body->SetGravityScale(0.0f);
+    player->body->SetGravityScale(0.5f);
     
     currentState->gameObjects.push_back(player);
 }
@@ -381,7 +390,7 @@ void Application::initRope() {
     distanceJoint = (b2DistanceJoint*) world->CreateJoint( &distanceJointDef);
     distanceJoint->SetLength(4.0f);
     distanceJoint->SetFrequency(0.1f);
-    distanceJoint->SetDampingRatio(0.0f);
+    distanceJoint->SetDampingRatio(0.5f);
     
     //joint->SetMaxLength(5.0f);
     
@@ -421,8 +430,13 @@ void Application::createBlimp(shared_ptr<Model> model, vec2 position) {
     temporaryGameObjectPointer->body = createBodyFromModel(model, 100.0f, position, "blimp");
     temporaryGameObjectPointer->body->SetLinearVelocity(b2Vec2(randomVelocityX, 0.0f));
     temporaryGameObjectPointer->body->SetGravityScale(0.0f);
-    
+
+	temporaryGameObjectPointer->enabled = false;
+	temporaryGameObjectPointer->body->SetActive(false);
+	//temporaryGameObjectPointer->body->SetAwake(false);
+	
     currentState->gameObjects.push_back(temporaryGameObjectPointer);
+	blimpPool.push_back(temporaryGameObjectPointer);
 }
 
 void Application::initBlimps() {
@@ -436,13 +450,11 @@ void Application::initBlimps() {
      */
     float currentX = bufferDistance;
     glm::vec2 currentPosition = vec2(bufferDistance, 0.0f);
-    
-    int numberOfBlimps = 50;
+   
     float distancePerBlimp = (winDistance - bufferDistance * 2.0f) / numberOfBlimps;
     
-    bool high = true; //switch high & low every other bird
     for (int i = 0; i < numberOfBlimps; i++) {
-        if (high == true) {
+        if (bp_high == true) {
             currentPosition.y = highBirdY;
         }
         else {
@@ -458,7 +470,7 @@ void Application::initBlimps() {
         createBlimp(blimpModel, currentPosition);
         
         currentX += distancePerBlimp; //Make next bird X meters to the right
-        high = !high; //flip high/low
+        bp_high = !bp_high; //flip high/low
     }
 }
 
@@ -482,7 +494,12 @@ void Application::createBird(shared_ptr<Model> model, vec2 position) {
     temporaryGameObjectPointer->body = createBodyFromModel(model, 0.05f, position, "bird");
     temporaryGameObjectPointer->body->SetGravityScale(0.0f);
 
+	temporaryGameObjectPointer->enabled = false;
+	temporaryGameObjectPointer->body->SetActive(false);
+	//temporaryGameObjectPointer->body->SetAwake(false);
+
 	currentState->gameObjects.push_back(temporaryGameObjectPointer);
+	birdPool.push_back(temporaryGameObjectPointer);
 }
 
 void Application::initBirds() {
@@ -497,11 +514,9 @@ void Application::initBirds() {
 	float currentX = bufferDistance;
 	glm::vec2 currentPosition = vec2(bufferDistance, 0.0f);
 
-
-	bool high = true; //switch high & low every other bird
 	for (int i = 0; i < numberOfBirds; i++) {
 
-		if (high == true) {
+		if (bd_high == true) {
 			currentPosition.y = highBirdY;
 		}
 		else {
@@ -516,8 +531,117 @@ void Application::initBirds() {
 
 		createBird(birdModel, currentPosition);
 
-		currentX += distancePerBird; //Make next bird X meters to the right
-		high = !high; //flip high/low
+		bd_high = !bd_high; //flip high/low
+	}
+}
+
+vec3 Application::newLocation(float playerX) {
+	glm::vec3 newPosition = vec3(bufferDistance + playerX, 0.0f, 0.0f);
+
+	if (bd_high == true) {
+		newPosition.y = highBirdY;
+	}
+	else {
+		newPosition.y = lowBirdY;
+	}
+
+	float xOffset = randomFloatNegativePossible();
+	newPosition.x += xOffset;
+	float yOffset = randomFloatNegativePossible();
+	newPosition.y += yOffset;
+
+	bd_high = !bd_high; // flip high/low for next bird
+	return newPosition;
+}
+
+void Application::genEnemies(float dt) {
+	if (camera->gameStarted) {
+		time += dt;
+
+		// count of currently drawn birds, blimps
+		int curBird = bd;
+		int curBlimp = bp;
+
+		int maxBirds = std::max(int(2 * log(15 * time)), 0);
+		int maxBlimps = std::max(int(log(2.5 * time)), 0);
+
+		int playerX = player->position.x;
+		int playerY = player->position.y;
+
+		if (!gameOver) {
+			//fprintf(stderr, "curBird: %d, curBlimp: %d, maxBirds: %d, maxBlimps: %d\n", curBird, curBlimp, maxBirds, maxBlimps);
+
+			//check for objects above/below/left of camera
+			for (int i = 0; i < numberOfBirds; i++) {
+				if (birdPool.at(i)->enabled) {
+					b2Vec2 curPos = birdPool.at(i)->body->GetPosition();
+
+					if (curPos.x < playerX - 20.0f || curPos.y < playerY - 20.0f || curPos.y > playerY + 20.0f) {
+						birdPool.at(i)->enabled = false;
+						birdPool.at(i)->body->SetActive(false);
+						curBird--;
+
+						//reset location
+						vec3 newPos = newLocation(playerX);
+						birdPool.at(i)->body->SetTransform(b2Vec2(newPos.x, newPos.y), 0.0f);
+
+						//reset velocity
+						float randomVelocityX = randomFloat() * -1.0f;
+						birdPool.at(i)->body->SetLinearVelocity(b2Vec2(randomVelocityX, 0.0f));
+						birdPool.at(i)->body->SetAngularVelocity(0.0f);
+						//birdPool.at(i)->graphics->material = 5;
+					}
+				}
+			}
+
+			for (int i = 0; i < numberOfBlimps; i++) {
+				if (blimpPool.at(i)->enabled) {
+					b2Vec2 curPos = blimpPool.at(i)->body->GetPosition();
+
+					if (curPos.x < playerX - 20.0f || curPos.y < playerY - 20.0f || curPos.y > playerY + 20.0f) {
+						blimpPool.at(i)->enabled = false;
+						blimpPool.at(i)->body->SetActive(false);
+						curBlimp--;
+
+						//reset location
+						vec3 newPos = newLocation(playerX);
+						blimpPool.at(i)->body->SetTransform(b2Vec2(newPos.x, newPos.y), 0.0f);
+
+						//reset velocity
+						float randomVelocityX = randomFloat() * -1.0f;
+						blimpPool.at(i)->body->SetLinearVelocity(b2Vec2(randomVelocityX, 0.0f));
+						blimpPool.at(i)->body->SetAngularVelocity(0.0f);
+						//blimpPool.at(i)->graphics->material = 0;
+					}
+
+				}
+			}
+
+			//draw birds, blimps needed to meet maxBirds, maxBlimps
+			//check current number of birds being drawn
+			for (int i = 0; curBird <= maxBirds && i < numberOfBirds; i++) {
+				if (!birdPool.at(i)->enabled) {
+					birdPool.at(i)->enabled = true;
+					birdPool.at(i)->body->SetActive(true);
+					curBird++;
+				}
+			}
+			for (int i = 0; curBlimp <= maxBlimps && i < numberOfBlimps; i++) {
+				if (!blimpPool.at(i)->enabled) {
+					blimpPool.at(i)->enabled = true;
+					blimpPool.at(i)->body->SetActive(true);
+					curBlimp++;
+				}
+				/*else {
+					vec3 newPos = newLocation(player->position.x);
+					blimpPool.at(i)->body->SetTransform(b2Vec2(newPos.x, newPos.y), 0.0f);
+				}*/
+			}
+
+			bd = curBird;
+			bp = curBlimp;
+		}
+
 	}
 }
 
@@ -654,6 +778,8 @@ void Application::initSkybox(const std::string& resourceDirectory,
 	sky->addUniform("P");
 	sky->addUniform("V");
 	sky->addUniform("cube_texture");
+	sky->addUniform("fogSelector");
+	sky->addUniform("depthFog");
 	sky->addAttribute("vp");
 
 	float points[] = {
@@ -718,6 +844,55 @@ void Application::initSkybox(const std::string& resourceDirectory,
 	const std::string right = skyboxDirectory + "/TropicalSunnyDayRight2048.png";
 	createCubeMap(front, back, top, bottom, left, right, &tex_cube);
 
+}
+
+void Application::createCubeMap(const std::string& front, const std::string& back,
+	const std::string& top, const std::string& bottom, const std::string& left,
+	const std::string& right, GLuint* tex_cube) {
+	//generate cube-map texture to hold in all the sides
+	glActiveTexture(GL_TEXTURE0);
+	glGenTextures(1, tex_cube);
+
+	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, front);
+	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_POSITIVE_Z, back);
+	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_POSITIVE_Y, top);
+	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, bottom);
+	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_POSITIVE_X, left);
+	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_NEGATIVE_X, right);
+
+	//format cube map texture
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
+bool Application::loadCubeMapSide(GLuint texture, GLenum side_target,
+	const std::string& filename) {
+	glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
+
+	int x, y, n;
+	int force = 4;
+	unsigned char* imageData = stbi_load(filename.c_str(), &x, &y,
+		&n, force);
+
+	if (!imageData) {
+		fprintf(stderr, "ERROR: could not load %s\n", filename.c_str());
+		return false;
+	}
+
+	//non-power-of-2 dimensions check
+	if ((x & (x - 1)) != 0 || (y & (y - 1)) != 0) {
+		fprintf(stderr, "WARNING: image %s is not power-of-2 dimensions\n",
+			filename.c_str());
+	}
+
+	//copy image data into target side of cube map
+	glTexImage2D(side_target, 0, GL_RGBA, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+		imageData);
+	free(imageData);
+	return true;
 }
 
 
@@ -822,57 +997,6 @@ void Application::initMenuProgram(const std::string& resourceDirectory) {
 
 }
 
-
-
-void Application::createCubeMap(const std::string& front, const std::string& back,
-	const std::string& top, const std::string& bottom, const std::string& left,
-	const std::string& right, GLuint* tex_cube) {
-	//generate cube-map texture to hold in all the sides
-	glActiveTexture(GL_TEXTURE0);
-	glGenTextures(1, tex_cube);
-
-	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, front);
-	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_POSITIVE_Z, back);
-	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_POSITIVE_Y, top);
-	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, bottom);
-	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_POSITIVE_X, left);
-	loadCubeMapSide(*tex_cube, GL_TEXTURE_CUBE_MAP_NEGATIVE_X, right);
-
-	//format cube map texture
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-}
-
-bool Application::loadCubeMapSide(GLuint texture, GLenum side_target,
-	const std::string& filename) {
-	glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
-
-	int x, y, n;
-	int force = 4;
-	unsigned char* imageData = stbi_load(filename.c_str(), &x, &y,
-		&n, force);
-
-	if (!imageData) {
-		fprintf(stderr, "ERROR: could not load %s\n", filename.c_str());	
-		return false;
-	}
-
-	//non-power-of-2 dimensions check
-	if ((x & (x - 1)) != 0 || (y & (y - 1)) != 0) {
-		fprintf(stderr, "WARNING: image %s is not power-of-2 dimensions\n",
-			filename.c_str());
-	}
-
-	//copy image data into target side of cube map
-	glTexImage2D(side_target, 0, GL_RGBA, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-		imageData);
-	free(imageData);
-	return true;
-}
-
 void Application::integrate(float t, float dt) {
 	//previousState = make_shared<State>( *currentState );    
 	int32 velocityIterations = 6;
@@ -898,8 +1022,10 @@ void Application::integrate(float t, float dt) {
 				player->scale = 0.0f;
 			}
 		}
+		currentState->integrate(t, dt);
+		genEnemies(dt);
 	}
-
+	
 }
 
 void Application::render(float t, float alpha) {
@@ -968,7 +1094,10 @@ void Application::renderState(State& state, float t) {
 			vec3 directionFromLight = vec3(0.0f) - vec3(-5.0f, 20.0f, 10.0f); //from X to origin
 			vec3 directionTowardsLight = -directionFromLight;
 			CHECKED_GL_CALL( glUniform3f(mainProgram->getUniform("directionTowardsLight"), directionTowardsLight.x, directionTowardsLight.y, directionTowardsLight.z) );
-    
+			//CHECKED_GL_CALL( glUniform1i(mainProgram->getUniform("fogSelector"), 1));
+			//CHECKED_GL_CALL( glUniform1i(mainProgram->getUniform("depthFog"), 3));
+			fogTexture->bind(mainProgram->getUniform("Texture0"));
+
 			/* PRIMARY RENDER LOOP */
 			for(auto& gameObject : state.gameObjects) {
 				if (gameObject->enabled) {
@@ -976,12 +1105,17 @@ void Application::renderState(State& state, float t) {
 					gameObject->render(t, mainProgram);
 				}
 			}
+
+			//bird ammo display
+			if (cage->score > 15)
+				cage->score = 15;
+
 			M = make_shared<MatrixStack>();
 			M->pushMatrix();
 			M->loadIdentity();
 				vec3 first_bird_position = vec3((player->position.x) - 8.0f, -6.0f, 1.0f);
 				M->translate(first_bird_position);
-				for(int i = 0 ; i < cage->score; i++) {
+				for(int i = 0; i < cage->score; i++) {
 					M->pushMatrix();
 						M->translate( glm::vec3(0.5f * i, 0.0f, 0.0f) );
 						//CHECKED_GL_CALL(glUniformMatrix4fv(mainProgram->getUniform("M"), 1, GL_FALSE, value_ptr(M->topMatrix())));
@@ -989,6 +1123,8 @@ void Application::renderState(State& state, float t) {
 					M->popMatrix();
 				}
 			M->popMatrix();
+
+			//blimp score
 			M->pushMatrix();
 			M->loadIdentity();
 			vec3 first_blimp_position = vec3((player->position.x) - 8.0f, -4.0f, 1.0f);
@@ -1015,6 +1151,9 @@ void Application::renderState(State& state, float t) {
 			w = glfwGetTime()/10;
 			CHECKED_GL_CALL(glUniform2fv(groundProgram->getUniform("offset"), 1, &offset[0]));
 			CHECKED_GL_CALL(glUniform1f(groundProgram->getUniform("w"), w));
+			CHECKED_GL_CALL(glUniform1i(groundProgram->getUniform("fogSelector"), 1));
+			CHECKED_GL_CALL(glUniform1i(groundProgram->getUniform("depthFog"), 0));
+
 			M = make_shared<MatrixStack>();
 			M->pushMatrix();
 				M->loadIdentity();
@@ -1056,6 +1195,8 @@ void Application::renderState(State& state, float t) {
 			camera->setHelicopterSkyViewMatrix(sky);
 			camera->setProjectionMatrix(sky, aspect);
 			CHECKED_GL_CALL(glUniform1i(sky->getUniform("cube_texture"), 0));
+			CHECKED_GL_CALL(glUniform1i(sky->getUniform("fogSelector"), 1));
+			CHECKED_GL_CALL(glUniform1i(sky->getUniform("depthFog"), 0));
 
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_CUBE_MAP, tex_cube);

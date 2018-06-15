@@ -4,8 +4,8 @@
 
 #include "WindowManager.h"
 
-const int windowWidth = 800;
-const int windowHeight = 420;
+const int windowWidth = 1600;
+const int windowHeight = 840;
 
 int main(int argc, char **argv)
 {

@@ -60,13 +60,14 @@ class Application : public EventCallbacks
     
     //birds
     const float winDistance = 2000.0f;
-    const int numberOfBirds = 300;
+    const int numberOfBirds = 100;
+	const int numberOfBlimps = 100;
     const float bufferDistance = 150.0f; //don't want birds X meters from start or finish
     //vvv (1000-30*2) = 940; 940/100 = 9.4f
     const float distancePerBird = (winDistance - bufferDistance * 2.0f) / (float) numberOfBirds;
     const float birdInitialHorizontalVelocity = -10.0f;
-    const float highBirdY = 6.0f;
-    const float lowBirdY = 3.0f;
+    const float highBirdY = 10.0f;
+    const float lowBirdY = 2.0f;
 public:
 //Variables
     
@@ -74,10 +75,21 @@ public:
     int playerHealth = 3;
     
     double w = 0; //w is for sin wave frequency.
+	float time = 0;
     
     bool mouseDown = false;
 	int copterHealth = 3;
 	int manHealth = 3;
+
+	//Object Pools
+	bool bd_high = true; //switch high & low every other bird
+	bool bp_high = true; //switch high & low every other blimp
+
+	int bd = 0; //keeps track of latest bird used in the pool
+	int bp = 0; //keeps track of latest blimp used in the pool
+
+	std::vector< std::shared_ptr<GameObject> > birdPool;
+	std::vector< std::shared_ptr<GameObject> > blimpPool;
 
     WindowManager * windowManager = nullptr;
     
@@ -133,7 +145,7 @@ public:
     std::shared_ptr<Texture> heightmapTexture;
     std::shared_ptr<Texture> grassTexture;
     std::shared_ptr<Texture> waterTexture;
-    
+	std::shared_ptr<Texture> fogTexture;
     
     //ground plane info
     GLuint GroundBufferObject, GroundNormalBufferObject, GroundTextureBufferObject, GroundIndexBufferObject;
@@ -169,9 +181,12 @@ public:
     
     void createBird(std::shared_ptr<Model> model, glm::vec2 position);
     void initBirds();
+
+	// once blimp or bird is collided/goes offscreen, give a new location
+	glm::vec3 newLocation(float playerX);
+	void genEnemies(float dt);
     
-    void initQuad();
-    
+	void initQuad();
     void renderGround();
 
 	//Skybox

@@ -20,10 +20,24 @@ void PlayerPhysicsComponent::update(GameObject& gameObject, float dt) {
                 char *cString = (char *) userData;
                 if(strcmp(cString, "blimp") == 0) {
                     //printf("blimp\n");
-                    gameObject.collisionCooldown = 3.0f;
-                    gameObject.health -=1 ;
+                    gameObject.collisionCooldown = 2.0f;
+                    gameObject.health -= 1;
                 }
             }
         }
     }
+
+	//restrict player to camera space
+	b2Vec2 pos = gameObject.body->GetPosition();
+	b2Vec2 vel = gameObject.body->GetLinearVelocity();
+
+	if (pos.y > 15.0f) {
+		if (vel.y > 0.0f)
+			vel.y = -1.0f;
+	}
+	if (pos.y < -3.0f) {
+		if (vel.y < 0.0f)
+			vel.y = 1.0f;
+	}
+	gameObject.body->SetLinearVelocity(vel);
 }
